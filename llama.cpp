@@ -542,6 +542,7 @@ struct llama_file_loader {
                 case GGML_TYPE_Q2_K:
                 case GGML_TYPE_Q3_K:
                 case GGML_TYPE_Q4_K:
+                case GGML_TYPE_Q4_KS:
                 case GGML_TYPE_Q5_K:
                 case GGML_TYPE_Q6_K:
                     break;
@@ -612,6 +613,7 @@ struct llama_file_saver {
             case GGML_TYPE_Q2_K:
             case GGML_TYPE_Q3_K:
             case GGML_TYPE_Q4_K:
+            case GGML_TYPE_Q4_KS:
             case GGML_TYPE_Q5_K:
             case GGML_TYPE_Q6_K:
                 break;
@@ -939,6 +941,7 @@ static const char *llama_ftype_name(enum llama_ftype ftype) {
         case LLAMA_FTYPE_MOSTLY_Q3_K_M: return "mostly Q3_K - Medium";
         case LLAMA_FTYPE_MOSTLY_Q3_K_L: return "mostly Q3_K - Large";
         case LLAMA_FTYPE_MOSTLY_Q4_K_S: return "mostly Q4_K - Small";
+        case LLAMA_FTYPE_MOSTLY_Q4_KS_S: return "mostly Q4_KS - Small";
         case LLAMA_FTYPE_MOSTLY_Q4_K_M: return "mostly Q4_K - Medium";
         case LLAMA_FTYPE_MOSTLY_Q5_K_S: return "mostly Q5_K - Small";
         case LLAMA_FTYPE_MOSTLY_Q5_K_M: return "mostly Q5_K - Medium";
@@ -2436,6 +2439,7 @@ static void llama_model_quantize_internal(const std::string & fname_inp, const s
         case LLAMA_FTYPE_MOSTLY_Q3_K_L: quantized_type = GGML_TYPE_Q3_K; break;
         case LLAMA_FTYPE_MOSTLY_Q4_K_S:
         case LLAMA_FTYPE_MOSTLY_Q4_K_M: quantized_type = GGML_TYPE_Q4_K; break;
+        case LLAMA_FTYPE_MOSTLY_Q4_KS_S: quantized_type = GGML_TYPE_Q4_KS; break;
         case LLAMA_FTYPE_MOSTLY_Q5_K_S:
         case LLAMA_FTYPE_MOSTLY_Q5_K_M: quantized_type = GGML_TYPE_Q5_K; break;
         case LLAMA_FTYPE_MOSTLY_Q6_K:   quantized_type = GGML_TYPE_Q6_K; break;
@@ -2512,7 +2516,7 @@ static void llama_model_quantize_internal(const std::string & fname_inp, const s
 #ifdef GGML_USE_K_QUANTS
             bool convert_incompatible_tensor = false;
             if (quantized_type == GGML_TYPE_Q2_K || quantized_type == GGML_TYPE_Q3_K || quantized_type == GGML_TYPE_Q4_K ||
-                quantized_type == GGML_TYPE_Q5_K || quantized_type == GGML_TYPE_Q6_K) {
+                quantized_type == GGML_TYPE_Q5_K || quantized_type == GGML_TYPE_Q6_K || quantized_type == GGML_TYPE_Q4_KS) {
                 int nx = tensor.ne.at(0);
                 int ny = tensor.ne.at(1);
                 if (nx % QK_K != 0 || ny % QK_K != 0) {

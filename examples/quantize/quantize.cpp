@@ -68,7 +68,12 @@ static const std::vector<struct quant_option> QUANT_OPTIONS = {
     {
         "Q4_K_S",
         LLAMA_FTYPE_MOSTLY_Q4_K_S,
-        " 3.56G, +0.1149 ppl @ 7B - small, significant quality loss",
+        " 3.56G, +0.1149 ppl @ 7B - small, quality loss but significantly better than Q4_0",
+    },
+    {
+        "Q4_KS_S",
+        LLAMA_FTYPE_MOSTLY_Q4_KS_S,
+        " 3.56G, +0.1149 ppl @ 7B - small, quality loss but significantly better than Q4_0",
     },
     {
         "Q4_K_M",
