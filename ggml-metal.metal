@@ -1723,9 +1723,9 @@ kernel void kernel_mul_mat_q4_KS_f32(
 
     const int step = sizeof(block_q4_KS) * nb;
 
-    for (int ib = ix; ib < nb; ib += 4) {
+    device const float4 * y4 = (device const float4 *)(y + ix * QK_K + 64 * il + 16 * ir);
 
-        device const float4 * y4 = (device const float4 *)(y + ib * QK_K + 64 * il + 16 * ir);
+    for (int ib = ix; ib < nb; ib += 4) {
 
         float sumy_l = 0, sumy_h = 0;
         for (int i = 0; i < 4; ++i) {
@@ -1755,6 +1755,8 @@ kernel void kernel_mul_mat_q4_KS_f32(
             sc += step;
             dh += step/2;
         }
+
+        y4 += QK_K;
     }
 
     for (int row = 0; row < N_DST; ++row) {
