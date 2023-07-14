@@ -56,6 +56,7 @@ struct ggml_metal_context {
     GGML_METAL_DECL_KERNEL(get_rows_q2_K);
     GGML_METAL_DECL_KERNEL(get_rows_q3_K);
     GGML_METAL_DECL_KERNEL(get_rows_q4_K);
+    GGML_METAL_DECL_KERNEL(get_rows_q4_KS);
     GGML_METAL_DECL_KERNEL(get_rows_q5_K);
     GGML_METAL_DECL_KERNEL(get_rows_q6_K);
     GGML_METAL_DECL_KERNEL(rms_norm);
@@ -66,6 +67,7 @@ struct ggml_metal_context {
     GGML_METAL_DECL_KERNEL(mul_mat_q2_K_f32);
     GGML_METAL_DECL_KERNEL(mul_mat_q3_K_f32);
     GGML_METAL_DECL_KERNEL(mul_mat_q4_K_f32);
+    GGML_METAL_DECL_KERNEL(mul_mat_q4_KS_f32);
     GGML_METAL_DECL_KERNEL(mul_mat_q5_K_f32);
     GGML_METAL_DECL_KERNEL(mul_mat_q6_K_f32);
     GGML_METAL_DECL_KERNEL(rope);
@@ -171,6 +173,7 @@ struct ggml_metal_context * ggml_metal_init(int n_cb) {
         GGML_METAL_ADD_KERNEL(get_rows_q2_K);
         GGML_METAL_ADD_KERNEL(get_rows_q3_K);
         GGML_METAL_ADD_KERNEL(get_rows_q4_K);
+        GGML_METAL_ADD_KERNEL(get_rows_q4_KS);
         GGML_METAL_ADD_KERNEL(get_rows_q5_K);
         GGML_METAL_ADD_KERNEL(get_rows_q6_K);
         GGML_METAL_ADD_KERNEL(rms_norm);
@@ -181,6 +184,7 @@ struct ggml_metal_context * ggml_metal_init(int n_cb) {
         GGML_METAL_ADD_KERNEL(mul_mat_q2_K_f32);
         GGML_METAL_ADD_KERNEL(mul_mat_q3_K_f32);
         GGML_METAL_ADD_KERNEL(mul_mat_q4_K_f32);
+        GGML_METAL_ADD_KERNEL(mul_mat_q4_KS_f32);
         GGML_METAL_ADD_KERNEL(mul_mat_q5_K_f32);
         GGML_METAL_ADD_KERNEL(mul_mat_q6_K_f32);
         GGML_METAL_ADD_KERNEL(rope);
@@ -698,6 +702,15 @@ void ggml_metal_graph_compute(
                                             nth1 = 16;
                                             [encoder setComputePipelineState:ctx->pipeline_mul_mat_q4_K_f32];
                                         } break;
+                                    case GGML_TYPE_Q4_KS:
+                                        {
+                                            GGML_ASSERT(ne02 == 1);
+                                            GGML_ASSERT(ne12 == 1);
+
+                                            nth0 = 4;
+                                            nth1 = 16;
+                                            [encoder setComputePipelineState:ctx->pipeline_mul_mat_q4_KS_f32];
+                                        } break;
                                     case GGML_TYPE_Q5_K:
                                         {
                                             GGML_ASSERT(ne02 == 1);
@@ -745,6 +758,7 @@ void ggml_metal_graph_compute(
                                 else if (src0t == GGML_TYPE_Q2_K ||
                                          src0t == GGML_TYPE_Q3_K ||
                                          src0t == GGML_TYPE_Q4_K ||
+                                         src0t == GGML_TYPE_Q4_KS ||
                                          src0t == GGML_TYPE_Q5_K ||
                                          src0t == GGML_TYPE_Q6_K) {
                                     [encoder setThreadgroupMemoryLength:nth0*nth1*sizeof(float) atIndex:0];
@@ -768,6 +782,7 @@ void ggml_metal_graph_compute(
                                 case GGML_TYPE_Q2_K: [encoder setComputePipelineState:ctx->pipeline_get_rows_q2_K]; break;
                                 case GGML_TYPE_Q3_K: [encoder setComputePipelineState:ctx->pipeline_get_rows_q3_K]; break;
                                 case GGML_TYPE_Q4_K: [encoder setComputePipelineState:ctx->pipeline_get_rows_q4_K]; break;
+                                case GGML_TYPE_Q4_KS: [encoder setComputePipelineState:ctx->pipeline_get_rows_q4_KS]; break;
                                 case GGML_TYPE_Q5_K: [encoder setComputePipelineState:ctx->pipeline_get_rows_q5_K]; break;
                                 case GGML_TYPE_Q6_K: [encoder setComputePipelineState:ctx->pipeline_get_rows_q6_K]; break;
                                 default: GGML_ASSERT(false && "not implemented");
