@@ -1738,6 +1738,8 @@ kernel void kernel_mul_mat_q4_KS_f32(
             yl[i] = y4[i+ 0]; sumy_l += yl[i];
             yh[i] = y4[i+32]; sumy_h += yh[i];
         }
+        sumy_l *= 1.f/16.f;
+        sumy_h *= 1.f/4096.f;
         for (int i = 1; i < 16; i += 2) {
             yl[i] *= 1.f/256.f;
             yh[i] *= 1.f/4096.f;
@@ -1746,7 +1748,7 @@ kernel void kernel_mul_mat_q4_KS_f32(
             yh[i] *= 1.f/16.f;
         }
 
-        device const uint8_t  * sc = x[ib].scales + 2 * il;
+        device const uint16_t * sc = (device const uint16_t *)x[ib].scales + il;
         device const uint16_t * q  = (device const uint16_t *)x[ib].qs + 16 * il + 8 * ir;
         device const half     * dh = x[ib].d;
 
@@ -1760,10 +1762,11 @@ kernel void kernel_mul_mat_q4_KS_f32(
 
             float dall = dh[0];
             float dmin = dh[1];
-            sumf[row] += dall * (acc[0] * (sc[0] & 0xF) + acc[1] * (sc[1] & 0xF)) - dmin * (sumy_l * (sc[0] >> 4) + sumy_h * (sc[1] >> 4));
+            sumf[row] += dall * (acc[0] * (sc[0] & 0x000F) + 1.f/256.f * acc[1] * (sc[0] & 0x0F00))
+                       - dmin * (sumy_l * (sc[0] & 0x00F0) + sumy_h * (sc[0] & 0xF000));
 
             q  += step/2;
-            sc += step;
+            sc += step/2;
             dh += step/2;
         }
 
