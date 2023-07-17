@@ -1094,7 +1094,7 @@ static void dequantize_row_q4_KS(device const block_q4_KS * x, device float * y,
 
     for (int i = 0; i < nb; i++) {
 
-        device const uint8_t * q = x[i].qs;
+        device const uint8_t * q = (device const uint8_t *)x[i].qs;
 
         const float dall = x[i].d[0];
         const float dmin = x[i].d[1];
@@ -1735,29 +1735,34 @@ kernel void kernel_mul_mat_q4_KS_f32(
 
         float sumy_l = 0, sumy_h = 0;
         for (int i = 0; i < 16; ++i) {
-            yl[i] = y4[i+ 0];
-            yh[i] = y4[i+32];
-            sumy_l += yl[i];
-            sumy_h += yh[i];
+            yl[i] = y4[i+ 0]; sumy_l += yl[i];
+            yh[i] = y4[i+32]; sumy_h += yh[i];
+        }
+        for (int i = 1; i < 16; i += 2) {
+            yl[i] *= 1.f/256.f;
+            yh[i] *= 1.f/4096.f;
+        }
+        for (int i = 0; i < 16; i += 2) {
+            yh[i] *= 1.f/16.f;
         }
 
-        device const uint8_t * sc = x[ib].scales + 2 * il;
-        device const uint8_t * q  = x[ib].qs + 32 * il + 16 * ir;
-        device const half    * dh = x[ib].d;
+        device const uint8_t  * sc = x[ib].scales + 2 * il;
+        device const uint16_t * q  = (device const uint16_t *)x[ib].qs + 16 * il + 8 * ir;
+        device const half     * dh = x[ib].d;
 
         for (int row = 0; row < N_DST_S; row++) {
 
             float2 acc = {0.f, 0.f};
-            for (int i = 0; i < 16; i++) {
-                acc[0] += yl[i] * (q[i] & 0xF);
-                acc[1] += yh[i] * (q[i] >>  4);
+            for (int i = 0; i < 16; i += 2) {
+                acc[0] += yl[i] * (q[i/2] & 0x000F) + yl[i+1] * (q[i/2] & 0x0F00);
+                acc[1] += yh[i] * (q[i/2] & 0x00F0) + yh[i+1] * (q[i/2] & 0xF000);
             }
 
             float dall = dh[0];
             float dmin = dh[1];
             sumf[row] += dall * (acc[0] * (sc[0] & 0xF) + acc[1] * (sc[1] & 0xF)) - dmin * (sumy_l * (sc[0] >> 4) + sumy_h * (sc[1] >> 4));
 
-            q  += step;
+            q  += step/2;
             sc += step;
             dh += step/2;
         }
