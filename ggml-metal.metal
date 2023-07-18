@@ -1676,12 +1676,8 @@ kernel void kernel_mul_mat_q4_K_f32(
         uint tiisg[[thread_index_in_simdgroup]],
         uint sgitg[[simdgroup_index_in_threadgroup]]) {
 
-    const uint16_t kmask1 = 0x3f3f;
-    const uint16_t kmask2 = 0x0f0f;
-    const uint16_t kmask3 = 0xc0c0;
-
-    const int ix = tiisg/2;  // 0...15
-    const int it = tiisg%2;  // 0 or 1
+    const int ix = tiisg/4;  // 0...7
+    const int it = tiisg%4;  // 0...3
 
     const int nb = ne00/QK_K;
     const int r0 = tgpig.x;
@@ -1690,27 +1686,27 @@ kernel void kernel_mul_mat_q4_K_f32(
     const int ib_row = first_row * nb;
     device const block_q4_K * x = (device const block_q4_K *) src0 + ib_row;
     device const float      * y = (device const float      *) src1 + r1*ne10;
-    float yl[16];
-    float yh[16];
+    float yl[8];
+    float yh[8];
     float sumf[N_DST_S]={0.f}, all_sum;
 
     const int step = sizeof(block_q4_K) * nb / 2;
 
-    device const float * y4 = y + ix * QK_K + 16 * it;
+    device const float * y4 = y + ix * QK_K + 8 * it;
 
     uint16_t sc16[2];
     thread const uint8_t * sc8 = (thread const uint8_t *)sc16;
 
-    for (int ib = ix; ib < nb; ib += 16) {
+    for (int ib = ix; ib < nb; ib += 8) {
 
         float2 sumy = {0.f, 0.f};
-        for (int i = 0; i < 16; ++i) {
+        for (int i = 0; i < 8; ++i) {
             yl[i] = y4[i+ 0]; sumy[0] += yl[i];
             yh[i] = y4[i+32]; sumy[1] += yh[i];
         }
 
         device const uint16_t * sc = (device const uint16_t *)x[ib].scales;
-        device const uint16_t * qs = (device const uint16_t *)x[ib].qs + 8 * it;
+        device const uint16_t * qs = (device const uint16_t *)x[ib].qs + 4 * it;
         device const half     * dh = x[ib].d;
 
         for (int row = 0; row < N_DST_S; row++) {
@@ -1720,7 +1716,7 @@ kernel void kernel_mul_mat_q4_K_f32(
 
             float2 acc1 = {0.f, 0.f};
             float2 acc2 = {0.f, 0.f};
-            for (int i = 0; i < 16; i += 2) {
+            for (int i = 0; i < 8; i += 2) {
                 acc1[0] += yl[i+0] * (qs[i/2] & 0x000F);
                 acc1[1] += yl[i+1] * (qs[i/2] & 0x0F00);
                 acc2[0] += yh[i+0] * (qs[i/2] & 0x00F0);
@@ -1738,7 +1734,7 @@ kernel void kernel_mul_mat_q4_K_f32(
             dh += step;
         }
 
-        y4 += 16 * QK_K;
+        y4 += 8 * QK_K;
     }
 
     for (int row = 0; row < N_DST_S; ++row) {
