@@ -1725,7 +1725,7 @@ kernel void kernel_mul_mat_q4_KS_f32(
     float yh[16];
     float sumf[N_DST_S]={0.f}, all_sum;
 
-    const int step = sizeof(block_q4_KS) * nb;
+    const int step = sizeof(block_q4_KS) * nb / 2;
 
     device const float * y4 = y + ix * QK_K + 64 * il + 16 * ir;
 
@@ -1740,34 +1740,30 @@ kernel void kernel_mul_mat_q4_KS_f32(
         }
         sumy_l *= 1.f/16.f;
         sumy_h *= 1.f/4096.f;
-        for (int i = 1; i < 16; i += 2) {
-            yl[i] *= 1.f/256.f;
-            yh[i] *= 1.f/4096.f;
-        }
-        for (int i = 0; i < 16; i += 2) {
-            yh[i] *= 1.f/16.f;
-        }
 
         device const uint16_t * sc = (device const uint16_t *)x[ib].scales + il;
-        device const uint16_t * q  = (device const uint16_t *)x[ib].qs + 16 * il + 8 * ir;
+        device const uint16_t * qs = (device const uint16_t *)x[ib].qs + 16 * il + 8 * ir;
         device const half     * dh = x[ib].d;
 
         for (int row = 0; row < N_DST_S; row++) {
 
-            float2 acc = {0.f, 0.f};
+            float4 acc = {0.f, 0.f, 0.f, 0.f};
             for (int i = 0; i < 16; i += 2) {
-                acc[0] += yl[i] * (q[i/2] & 0x000F) + yl[i+1] * (q[i/2] & 0x0F00);
-                acc[1] += yh[i] * (q[i/2] & 0x00F0) + yh[i+1] * (q[i/2] & 0xF000);
+                acc[0] += yl[i+0] * (qs[i/2] & 0x000F);
+                acc[1] += yl[i+1] * (qs[i/2] & 0x0F00);
+                acc[2] += yh[i+0] * (qs[i/2] & 0x00F0);
+                acc[3] += yh[i+1] * (qs[i/2] & 0xF000);
             }
 
             float dall = dh[0];
             float dmin = dh[1];
-            sumf[row] += dall * (acc[0] * (sc[0] & 0x000F) + 1.f/256.f * acc[1] * (sc[0] & 0x0F00))
+            sumf[row] += dall * ((acc[0] + 1.f/256.f * acc[1]) * (sc[0] & 0x000F) +
+                                 (acc[2] + 1.f/256.f * acc[3]) * (sc[0] & 0x0F00) * 1.f/4096.f)
                        - dmin * (sumy_l * (sc[0] & 0x00F0) + sumy_h * (sc[0] & 0xF000));
 
-            q  += step/2;
-            sc += step/2;
-            dh += step/2;
+            qs += step;
+            sc += step;
+            dh += step;
         }
 
         y4 += 4 * QK_K;
