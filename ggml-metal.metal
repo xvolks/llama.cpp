@@ -1357,25 +1357,33 @@ kernel void kernel_mul_mat_q2_K_f32(
         }
 
         device const uint8_t  * sc = (device const uint8_t  *)x[ib].scales + is;
-        device const uint8_t  * qs = (device const uint8_t  *)x[ib].qs + 32 * im + 8 * ir;
+        device const uint16_t * qs = (device const uint16_t *)x[ib].qs + 16 * im + 4 * ir;
         device const half     * dh = &x[ib].d;
 
         for (int row = 0; row < N_DST_S; row++) {
 
-            float4 acc = {0.f, 0.f, 0.f, 0.f};
-            for (int i = 0; i < 8; ++i) {
-                acc[0] += yl[i+ 0] * ((qs[i] >> 0) & 3);
-                acc[1] += yl[i+ 8] * ((qs[i] >> 2) & 3);
-                acc[2] += yl[i+16] * ((qs[i] >> 4) & 3);
-                acc[3] += yl[i+24] * ((qs[i] >> 6) & 3);
+            float4 acc1 = {0.f, 0.f, 0.f, 0.f};
+            float4 acc2 = {0.f, 0.f, 0.f, 0.f};
+            for (int i = 0; i < 8; i += 2) {
+                acc1[0] += yl[i+ 0] * (qs[i/2] & 0x0003);
+                acc2[0] += yl[i+ 1] * (qs[i/2] & 0x0300);
+                acc1[1] += yl[i+ 8] * (qs[i/2] & 0x000c);
+                acc2[1] += yl[i+ 9] * (qs[i/2] & 0x0c00);
+                acc1[2] += yl[i+16] * (qs[i/2] & 0x0030);
+                acc2[2] += yl[i+17] * (qs[i/2] & 0x3000);
+                acc1[3] += yl[i+24] * (qs[i/2] & 0x00c0);
+                acc2[3] += yl[i+25] * (qs[i/2] & 0xc000);
             }
 
             float dall = dh[0];
             float dmin = dh[1];
-            sumf[row] += dall * (acc[0] * (sc[0] & 0xF) + acc[1] * (sc[2] & 0xF) + acc[2] * (sc[4] & 0xF) + acc[3] * (sc[6] & 0xF)) -
+            sumf[row] += dall * ((acc1[0] + 1.f/256.f * acc2[0]) * (sc[0] & 0xF) * 1.f/ 1.f +
+                                 (acc1[1] + 1.f/256.f * acc2[1]) * (sc[2] & 0xF) * 1.f/ 4.f +
+                                 (acc1[2] + 1.f/256.f * acc2[2]) * (sc[4] & 0xF) * 1.f/16.f +
+                                 (acc1[3] + 1.f/256.f * acc2[3]) * (sc[6] & 0xF) * 1.f/64.f) -
                          dmin * (sumy[0] * (sc[0] >> 4) + sumy[1] * (sc[2] >> 4) + sumy[2] * (sc[4] >> 4) + sumy[3] * (sc[6] >> 4));
 
-            qs += step;
+            qs += step/2;
             sc += step;
             dh += step/2;
         }
