@@ -1694,8 +1694,7 @@ kernel void kernel_mul_mat_q4_K_f32(
 
     device const float * y4 = y + ix * QK_K + 8 * it;
 
-    uint16_t sc16[2];
-    thread const uint8_t * sc8 = (thread const uint8_t *)sc16;
+    uint16_t sc16[4];
 
     for (int ib = ix; ib < nb; ib += 8) {
 
@@ -1711,8 +1710,10 @@ kernel void kernel_mul_mat_q4_K_f32(
 
         for (int row = 0; row < N_DST_S; row++) {
 
-            sc16[0] = sc[0] & 0x0f0f;
-            sc16[1] = (sc[0] >> 4) & 0x0f0f;
+            sc16[0] = sc[0] & 0x000f;
+            sc16[1] = sc[0] & 0x0f00;
+            sc16[2] = sc[0] & 0x00f0;
+            sc16[3] = sc[0] & 0xf000;
 
             float2 acc1 = {0.f, 0.f};
             float2 acc2 = {0.f, 0.f};
@@ -1725,9 +1726,9 @@ kernel void kernel_mul_mat_q4_K_f32(
 
             float dall = dh[0];
             float dmin = dh[1];
-            sumf[row] += dall * ((acc1[0] + 1.f/256.f * acc1[1]) * sc8[0] +
-                                 (acc2[0] + 1.f/256.f * acc2[1]) * sc8[1] * 1.f/16.f) -
-                         dmin * (sumy[0] * sc8[2] + sumy[1] * sc8[3]);
+            sumf[row] += dall * ((acc1[0] + 1.f/256.f * acc1[1]) * sc16[0] +
+                                 (acc2[0] + 1.f/256.f * acc2[1]) * sc16[1] * 1.f/4096.f) -
+                         dmin * 1.f/16.f * (sumy[0] * sc16[2] + sumy[1] * sc16[3] * 1.f/256.f);
 
             qs += step;
             sc += step;
