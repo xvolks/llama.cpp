@@ -1494,6 +1494,10 @@ kernel void kernel_mul_mat_q3_K_f32(
     const uint16_t m2 = m1 << 8;
 
     const int shift = 2*il;
+    const uint16_t qm1 = 0x0003 << shift;
+    const uint16_t qm2 = 0x0300 << shift;
+    const int32_t v1 = 4 << shift;
+    const int32_t v2 = 1024 << shift;
 
     const uint16_t s_shift1 = 4*ip;
     const uint16_t s_shift2 = s_shift1 + 2*(il/2);
@@ -1516,9 +1520,9 @@ kernel void kernel_mul_mat_q3_K_f32(
 
         float s1 = 0, s2 = 0;
         for (int l = 0; l < n; l += 2) {
-            const uint16_t qs = q[l/2] >> shift;
-            s1 += y[l+0] * ((int16_t)(qs & 0x0003) - ((h[l/2] & m1) ? 0 : 4));
-            s2 += y[l+1] * ((int16_t)(qs & 0x0300) - ((h[l/2] & m2) ? 0 : 1024));
+            const uint16_t qs = q[l/2];
+            s1 += y[l+0] * ((int32_t)(qs & qm1) - ((h[l/2] & m1) ? 0 : v1));
+            s2 += y[l+1] * ((int32_t)(qs & qm2) - ((h[l/2] & m2) ? 0 : v2));
         }
         float d = d_all * (s1 + 1.f/256.f * s2);
         sumf1 += d * scales[0];
@@ -1529,16 +1533,16 @@ kernel void kernel_mul_mat_q3_K_f32(
         h += 8;
         s1 = s2 = 0;
         for (int l = 0; l < n; l += 2) {
-            const uint16_t qs = q[l/2] >> shift;
-            s1 += y[l+0] * ((int16_t)(qs & 0x0003) - ((h[l/2] & m1) ? 0 : 4));
-            s2 += y[l+1] * ((int16_t)(qs & 0x0300) - ((h[l/2] & m2) ? 0 : 1024));
+            const uint16_t qs = q[l/2];
+            s1 += y[l+0] * ((int32_t)(qs & qm1) - ((h[l/2] & m1) ? 0 : v1));
+            s2 += y[l+1] * ((int32_t)(qs & qm2) - ((h[l/2] & m2) ? 0 : v2));
         }
         d = d_all * (s1 + 1.f/256.f * s2);
         sumf1 += d * scales[1];
         sumf2 += d;
 
     }
-    const float sumf = sumf1 - 32.f*sumf2;
+    const float sumf = (sumf1 - 32.f*sumf2) / (1 << shift);
 #else
     const int ix = tiisg/4;
     const int il = 4 * (tiisg%4);// 0, 4, 8, 12
