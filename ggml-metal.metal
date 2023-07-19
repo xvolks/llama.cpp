@@ -1490,7 +1490,8 @@ kernel void kernel_mul_mat_q3_K_f32(
     const int n   = 8;
     const int l0  = n*ir;
 
-    const uint8_t m = 1 << (4*ip + il);
+    const uint16_t m1 = 1 << (4*ip + il);
+    const uint16_t m2 = m1 << 8;
 
     const int shift = 2*il;
 
@@ -1506,26 +1507,33 @@ kernel void kernel_mul_mat_q3_K_f32(
 
         const float d_all = (float)(x[i].d);
 
-        device const uint8_t * q = x[i].qs + q_offset;
-        device const uint8_t * h = x[i].hmask + l0;
-        device const float   * y = yy + i * QK_K + y_offset;
+        device const uint16_t * q = (device const uint16_t *)(x[i].qs + q_offset);
+        device const uint16_t * h = (device const uint16_t *)(x[i].hmask + l0);
+        device const float    * y = yy + i * QK_K + y_offset;
 
         device const uint16_t * a = (device const uint16_t *)x[i].scales;
         const char2 scales = as_type<char2>((uint16_t)(((a[il] >> s_shift1) & kmask2) | (((a[ik] >> s_shift2) & kmask1) << 4)));
 
-        float s = 0;
-        for (int l = 0; l < n; ++l) {
-            s += y[l+ 0] * ((int8_t)((q[l+ 0] >> shift) & m3) - ((h[l+ 0] & m) ? 0 : m4));
+        float s1 = 0, s2 = 0;
+        for (int l = 0; l < n; l += 2) {
+            const uint16_t qs = q[l/2] >> shift;
+            s1 += y[l+0] * ((int16_t)(qs & 0x0003) - ((h[l/2] & m1) ? 0 : 4));
+            s2 += y[l+1] * ((int16_t)(qs & 0x0300) - ((h[l/2] & m2) ? 0 : 1024));
         }
-        float d = d_all * s;
+        float d = d_all * (s1 + 1.f/256.f * s2);
         sumf1 += d * scales[0];
         sumf2 += d;
 
-        s = 0;
-        for (int l = 0; l < n; ++l) {
-            s += y[l+16] * ((int8_t)((q[l+16] >> shift) & m3) - ((h[l+16] & m) ? 0 : m4));
+        y += 16;
+        q += 8;
+        h += 8;
+        s1 = s2 = 0;
+        for (int l = 0; l < n; l += 2) {
+            const uint16_t qs = q[l/2] >> shift;
+            s1 += y[l+0] * ((int16_t)(qs & 0x0003) - ((h[l/2] & m1) ? 0 : 4));
+            s2 += y[l+1] * ((int16_t)(qs & 0x0300) - ((h[l/2] & m2) ? 0 : 1024));
         }
-        d = d_all * s;
+        d = d_all * (s1 + 1.f/256.f * s2);
         sumf1 += d * scales[1];
         sumf2 += d;
 
