@@ -1933,11 +1933,11 @@ kernel void kernel_mul_mat_q5_K_f32(
 
             float4 acc = {0.f, 0.f, 0.f, 0.f};
             for (int l = 0; l < n; ++l) {
-                const uint8_t h = qh[l];
-                acc[0] += yl[l+0] * ((uint32_t)(q1[l] & 0x0F) + (h & hm1 ? 16 : 0));
-                acc[1] += yl[l+4] * ((uint32_t)(q1[l] & 0xF0) + (h & hm2 ? 256 : 0));
-                acc[2] += yh[l+0] * ((uint32_t)(q2[l] & 0x0F) + (h & hm3 ? 16 : 0));
-                acc[3] += yh[l+4] * ((uint32_t)(q2[l] & 0xF0) + (h & hm4 ? 256 : 0));
+                uint8_t h = qh[l];
+                acc[0] += yl[l+0] * ((uint16_t)(q1[l] & 0x0F) + (h & hm1 ? 16 : 0));
+                acc[1] += yl[l+4] * ((uint16_t)(q1[l] & 0xF0) + (h & hm2 ? 256 : 0));
+                acc[2] += yh[l+0] * ((uint16_t)(q2[l] & 0x0F) + (h & hm3 ? 16 : 0));
+                acc[3] += yh[l+4] * ((uint16_t)(q2[l] & 0xF0) + (h & hm4 ? 256 : 0));
             }
             const float dall = dh[0];
             const float dmin = dh[1];
