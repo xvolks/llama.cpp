@@ -1538,62 +1538,50 @@ kernel void kernel_mul_mat_q3_K_f32(
         sumf2 += d;
 
     }
-
     const float sumf = sumf1 - 32.f*sumf2;
-    const float tot = simd_sum(sumf);
-    if (tiisg == 0) {
-        dst[r1*ne0 + row] = tot;
-    }
 #else
-    const int il = 4 * tpitg.x;  // 0, 4, 8, 12
+    const int ix = tiisg/4;
+    const int il = 4 * (tiisg%4);// 0, 4, 8, 12
     const int im = il/8;         // 0, 0, 1, 1
     const int in = il%8;         // 0, 4, 0, 4
 
-    float sumf = 0;
+    float4 sum1 = {0.f, 0.f, 0.f, 0.f};
+    float4 sum2 = {0.f, 0.f, 0.f, 0.f};
 
-    for (int i = tpitg.y; i < nb; i += tptg.y) {
+    for (int i = ix; i < nb; i += 8) {
 
         const float d_all = (float)(x[i].d);
 
-        device const uint8_t * q = x[i].qs + il;
-        device const uint8_t * h = x[i].hmask + in;
-        device const float   * y = yy + i * QK_K + il;
+        device const uint16_t * q = (device const uint16_t *)(x[i].qs + il);
+        device const uint16_t * h = (device const uint16_t *)(x[i].hmask + in);
+        device const float    * y = yy + i * QK_K + il;
 
         const float d1 = d_all * ((x[i].scales[0] & 0xF) - 8);
         const float d2 = d_all * ((x[i].scales[0] >>  4) - 8);
         const float d3 = d_all * ((x[i].scales[1] & 0xF) - 8);
         const float d4 = d_all * ((x[i].scales[1] >>  4) - 8);
 
-        for (int l = 0; l < 4; ++l) {
-            const uint8_t hm = h[l] >> im;
-            sumf += y[l+ 0] * d1 * ((int8_t)((q[l+0] >> 0) & 3) - ((hm & 0x01) ? 0 : 4))
-                  + y[l+16] * d2 * ((int8_t)((q[l+0] >> 2) & 3) - ((hm & 0x04) ? 0 : 4))
-                  + y[l+32] * d3 * ((int8_t)((q[l+0] >> 4) & 3) - ((hm & 0x10) ? 0 : 4))
-                  + y[l+48] * d4 * ((int8_t)((q[l+0] >> 6) & 3) - ((hm & 0x40) ? 0 : 4));
+        for (int l = 0; l < 4; l += 2) {
+            const uint16_t hm = h[l/2] >> im;
+            sum1[0] += y[l+ 0] * d1 * ((int32_t)(q[l/2] & 0x0003) - ((hm & 0x0001) ? 0 :  4));
+            sum1[1] += y[l+16] * d2 * ((int32_t)(q[l/2] & 0x000c) - ((hm & 0x0004) ? 0 : 16));
+            sum1[2] += y[l+32] * d3 * ((int32_t)(q[l/2] & 0x0030) - ((hm & 0x0010) ? 0 : 64));
+            sum1[3] += y[l+48] * d4 * ((int32_t)(q[l/2] & 0x00c0) - ((hm & 0x0040) ? 0 : 256));
+            sum2[0] += y[l+ 1] * d1 * ((int32_t)(q[l/2] & 0x0300) - ((hm & 0x0100) ? 0 : 1024));
+            sum2[1] += y[l+17] * d2 * ((int32_t)(q[l/2] & 0x0c00) - ((hm & 0x0400) ? 0 : 4096));
+            sum2[2] += y[l+33] * d3 * ((int32_t)(q[l/2] & 0x3000) - ((hm & 0x1000) ? 0 : 16384));
+            sum2[3] += y[l+49] * d4 * ((int32_t)(q[l/2] & 0xc000) - ((hm & 0x4000) ? 0 : 65536));
         }
 
     }
-
-    sum[ith] = sumf;
-
-
-    //
-    // Accumulate the sum from all threads in the threadgroup
-    //
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (ith%4 == 0) {
-        for (int i = 1; i < 4; ++i) sum[ith] += sum[ith + i];
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (ith%16 == 0) {
-        for (int i = 4; i < 16; i += 4) sum[ith] += sum[ith + i];
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (ith == 0) {
-        for (int i = 16; i < nth; i += 16) sum[0] += sum[i];
-        dst[r1*ne0 + r0] = sum[0];
-    }
+    const float sumf = sum1[0] + sum1[1] * 1.f/4.f + sum1[2] * 1.f/16.f + sum1[3] * 1.f/64.f +
+                      (sum2[0] + sum2[1] * 1.f/4.f + sum2[2] * 1.f/16.f + sum2[3] * 1.f/64.f) * 1.f/256.f;
 #endif
+
+    const float tot = simd_sum(sumf);
+    if (tiisg == 0) {
+        dst[r1*ne0 + row] = tot;
+    }
 
 }
 
