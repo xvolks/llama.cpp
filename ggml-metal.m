@@ -758,6 +758,9 @@ void ggml_metal_graph_compute(
                                 if (src0t == GGML_TYPE_Q4_KS || src0t == GGML_TYPE_Q4_K || src0t == GGML_TYPE_Q2_K) {
                                     [encoder dispatchThreadgroups:MTLSizeMake((ne01 + 7) / 8, ne11, 1) threadsPerThreadgroup:MTLSizeMake(nth0, nth1, 1)];
                                 }
+                                else if (src0t == GGML_TYPE_Q5_K) {
+                                    [encoder dispatchThreadgroups:MTLSizeMake((ne01 + 3) / 4, ne11, 1) threadsPerThreadgroup:MTLSizeMake(nth0, nth1, 1)];
+                                }
                                 else if (src0t == GGML_TYPE_Q6_K || src0t == GGML_TYPE_Q3_K || src0t == GGML_TYPE_Q5_K) {
                                     [encoder dispatchThreadgroups:MTLSizeMake((ne01+1)/2, ne11, 1) threadsPerThreadgroup:MTLSizeMake(nth0, nth1, 1)];
                                 }
