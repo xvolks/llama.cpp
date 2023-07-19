@@ -1451,6 +1451,7 @@ kernel void kernel_mul_mat_q2_K_f32(
     }
 }
 
+
 kernel void kernel_mul_mat_q3_K_f32(
         device const  void * src0,
         device const float * src1,
@@ -1459,21 +1460,19 @@ kernel void kernel_mul_mat_q3_K_f32(
         constant   int64_t & ne10,
         constant   int64_t & ne0,
         constant   int64_t & ne1,
-        threadgroup float  * sum [[threadgroup(0)]],
         uint2 tgpig[[threadgroup_position_in_grid]],
-        uint2 tpitg[[thread_position_in_threadgroup]],
-        uint2  tptg[[threads_per_threadgroup]]) {
+        uint tiisg[[thread_index_in_simdgroup]],
+        uint sgitg[[simdgroup_index_in_threadgroup]]) {
 
     const int nb = ne00/QK_K;
 
     const int64_t r0 = tgpig.x;
     const int64_t r1 = tgpig.y;
 
-    device const block_q3_K * x = (device const block_q3_K *) src0 + r0*nb;
-    device const float     * yy = (device const float      *) src1 + r1*ne10;
+    const int row = 2 * r0 + sgitg;
 
-    const int nth = tptg.x*tptg.y;
-    const int ith = tptg.y*tpitg.x + tpitg.y;
+    device const block_q3_K * x = (device const block_q3_K *) src0 + row*nb;
+    device const float     * yy = (device const float      *) src1 + r1*ne10;
 
 #if QK_K == 256
 
@@ -1483,7 +1482,8 @@ kernel void kernel_mul_mat_q3_K_f32(
     const uint16_t kmask1 = 0x0303;
     const uint16_t kmask2 = 0x0f0f;
 
-    const int tid = tpitg.y;        // expecting 16
+    const int tid = tiisg/2;
+    const int ix  = tiisg%2;
     const int ip  = tid/8;          // 0 or 1
     const int il  = tid/2 - 4*ip;   // 0...3
     const int ir  = tid%2;
@@ -1501,9 +1501,8 @@ kernel void kernel_mul_mat_q3_K_f32(
     const int q_offset = 32*ip + l0;
     const int y_offset = 128*ip + 32*il + l0;
 
-    //float sumf = 0;
     float sumf1 = 0, sumf2 = 0;
-    for (int i = tpitg.x; i < nb; i += tptg.x) {
+    for (int i = ix; i < nb; i += 2) {
 
         const float d_all = (float)(x[i].d);
 
@@ -1521,7 +1520,6 @@ kernel void kernel_mul_mat_q3_K_f32(
         float d = d_all * s;
         sumf1 += d * scales[0];
         sumf2 += d;
-        //sumf += d_all * s * (scales[0] - 32);
 
         s = 0;
         for (int l = 0; l < n; ++l) {
@@ -1530,12 +1528,14 @@ kernel void kernel_mul_mat_q3_K_f32(
         d = d_all * s;
         sumf1 += d * scales[1];
         sumf2 += d;
-        //sumf += d_all * s * (scales[1] - 32);
 
     }
 
-    //sum[ith] = sumf;
-    sum[ith] = sumf1 - 32.f*sumf2;
+    const float sumf = sumf1 - 32.f*sumf2;
+    const float tot = simd_sum(sumf);
+    if (tiisg == 0) {
+        dst[r1*ne0 + row] = tot;
+    }
 #else
     const int il = 4 * tpitg.x;  // 0, 4, 8, 12
     const int im = il/8;         // 0, 0, 1, 1
@@ -1568,7 +1568,6 @@ kernel void kernel_mul_mat_q3_K_f32(
 
     sum[ith] = sumf;
 
-#endif
 
     //
     // Accumulate the sum from all threads in the threadgroup
@@ -1586,6 +1585,7 @@ kernel void kernel_mul_mat_q3_K_f32(
         for (int i = 16; i < nth; i += 16) sum[0] += sum[i];
         dst[r1*ne0 + r0] = sum[0];
     }
+#endif
 
 }
 
