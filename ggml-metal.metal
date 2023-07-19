@@ -1883,14 +1883,11 @@ kernel void kernel_mul_mat_q5_K_f32(
 
     const int tid = tiisg/2;
     const int ix  = tiisg%2;
-    const int il  = tid/4;     // 0...3
-    const int ir  = tid - 4*il;// 0...3
+    const int im  = tid/8;
+    const int ir  = tid%8;
     const int n   = 4;
 
-    const int im = il/2;  // 0 or 1. 0 computes 0,32 + 128,160, 1 computes 64,96 + 192,224
-    const int in = il%2;
-
-    const int l0 = n*(2*ir + in);
+    const int l0 = n*ir;
     const int q_offset = 32*im + l0;
     const int y_offset = 64*im + l0;
 
