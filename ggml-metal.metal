@@ -383,75 +383,55 @@ kernel void kernel_mul_mat_q4_0_f32(
     const int nb = ne00/QK4_0;
     const int r0 = tgpig.x;
     const int r1 = tgpig.y;
-    device const block_q4_0 * x = (device const block_q4_0 *) src0 + (r0 * N_SIMDGROUP + sgitg) * N_DST * nb;
+    const int first_row = (r0 * N_SIMDGROUP + sgitg) * N_DST;
+    device const block_q4_0 * x = (device const block_q4_0 *) src0 + first_row * nb;
     device const float      * y = (device const float      *) src1 + r1*ne10;
-    block_q4_0 qb_curr, qb_next;
-    float4 y_curr[8];       // src1 vector cache
-    float sumf[N_DST]={0.f}, all_sum;
-    thread float * yl=(thread float *)y_curr;
 
-    // bootstrap
-    qb_curr = x[tiisg];
-    // each thread in a SIMD group deals with 1 block.
-    for (int column = 0; column < nb / N_SIMDWIDTH; column++) {
+    const int ix = tiisg/2;
+    const int il = 8*(tiisg%2);
+    float yl[16];
+    float sumf[N_DST]={0.f};
+
+    const int step = sizeof(block_q4_0) * nb / 2;
+
+    device const float * yb = y + ix * QK4_0 + il;
+
+    for (int ib = ix; ib < nb; ib += 16) {
 
         float sumy = 0;
-        for (int i = 0; i < QK4_0 / 4; i++) {
-            y_curr[i] = *((device float4  *)(y + N_SIMDWIDTH * (tiisg + column * QK4_0) + 4 * i));
-            sumy += y_curr[i][0] + y_curr[i][1] + y_curr[i][2] + y_curr[i][3];
+        for (int i = 0; i < 8; ++i) {
+            yl[i+0] = yb[i+ 0]; sumy += yl[i+0];
+            yl[i+8] = yb[i+16]; sumy += yl[i+8];
         }
         sumy *= (-8.f);
 
-        for (int row = 0; row < N_DST; row++) {
-            // prefetch next x block
-            qb_next = x[tiisg + ((row + 1) % N_DST) * nb + (column + ((row + 1) / N_DST)) * N_SIMDWIDTH];
+        device const half * dh = &x[ib].d;
+        device const uint16_t * qs = (device const uint16_t *)(x[ib].qs + il);
+
+        for (int row = 0; row < N_DST; ++row) {
 
             // calculate
-            float d = qb_curr.d;
-            float acc = sumy;
-            for (int i = 0; i < 16; i++) {
-                acc += yl[i] * (qb_curr.qs[i] & 0xF) + yl[i+16] * (qb_curr.qs[i] >> 4);
+            float d = *dh;
+            float4 acc = {0.f, 0.f, 0.f, 0.f};
+            for (int i = 0; i < 8; i += 2) {
+                acc[0] += yl[i+0] * (qs[i/2] & 0x000F);
+                acc[1] += yl[i+1] * (qs[i/2] & 0x0F00);
+                acc[2] += yl[i+8] * (qs[i/2] & 0x00F0);
+                acc[3] += yl[i+9] * (qs[i/2] & 0xF000);
             }
-            sumf[row] += d * acc;
-            qb_curr = qb_next;
+            sumf[row] += d * (acc[0] + 1.f/256.f * acc[1] + 1.f/16.f * acc[2] + 1.f/4096.f * acc[3] + sumy);
+
+            dh += step;
+            qs += step;
         }
+
+        yb += QK4_0 * 16;
     }
 
-    if (nb % N_SIMDWIDTH == 0) {
-        for (int row = 0; row < N_DST; ++row) {
-            all_sum = simd_sum(sumf[row]);
-            if (tiisg == 0 && ((r0 * N_SIMDGROUP + sgitg) * N_DST + row) < ne01) {
-                dst[r1*ne0 + (r0 * N_SIMDGROUP + sgitg) * N_DST + row] = all_sum;
-            }
-        }
-    } else {
-
-        float sumy = 0;
-        for (int i = 0; i < QK4_0 / 4; i++) {
-            y_curr[i] = *((device float4 *)(y + N_SIMDWIDTH * (tiisg + (nb / N_SIMDWIDTH) * QK4_0) + 4 * i));
-            sumy += y_curr[i][0] + y_curr[i][1] + y_curr[i][2] + y_curr[i][3];
-        }
-        sumy *= (-8.f);
-
-        for (int row = 0; row < N_DST; row++) {
-            // prefetch next x block
-            qb_next = x[tiisg + ((row + 1) % N_DST) * nb + (nb / N_SIMDWIDTH + ((row + 1) / N_DST)) * N_SIMDWIDTH];
-
-            // calculate
-            float d = qb_curr.d;
-            float acc = sumy;
-            for (int i = 0; i < 16; i++) {
-                acc += yl[i] * (qb_curr.qs[i] & 0xF) + yl[i+16] * (qb_curr.qs[i] >> 4);
-            }
-            if (tiisg < nb % N_SIMDWIDTH) {
-                sumf[row] += d * acc;
-            }
-            qb_curr = qb_next;
-
-            all_sum = simd_sum(sumf[row]);
-            if (tiisg == 0 && ((r0 * N_SIMDGROUP + sgitg) * N_DST + row) < ne01) {
-                dst[r1*ne0 + (r0 * N_SIMDGROUP + sgitg) * N_DST + row] = all_sum;
-            }
+    for (int row = 0; row < N_DST; ++row) {
+        const float tot = simd_sum(sumf[row]);
+        if (tiisg == 0) {
+            dst[r1*ne0 + first_row + row] = tot;
         }
     }
 }
