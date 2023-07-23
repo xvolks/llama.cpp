@@ -1664,14 +1664,14 @@ static __device__ __forceinline__ float vec_dot_q5_K_q8_1(
 #if __CUDA_ARCH__ >= MIN_CC_DP4A // lowest compute capability for integer intrinsics
     const block_q5_K * bq5_K = (const block_q5_K *) vbq;
 
+    float sumf_d = 0.0f;
+    float sumf_m = 0.0f;
+
 #ifndef GGML_QKK_64
 
     const int bq8_offset = (QR5_K/2) * (iqs / (QI8_1/2));
     const int * ql = (const int *)(bq5_K->qs + 16 * bq8_offset + 4 * (iqs%4));
     const int * qh = (const int *)(bq5_K->qh + 4 * (iqs%4));
-
-    float sumf_d = 0.0f;
-    float sumf_m = 0.0f;
 
     const float    d = bq5_K->d;
     const float dmin = bq5_K->dmin;
@@ -1722,7 +1722,47 @@ static __device__ __forceinline__ float vec_dot_q5_K_q8_1(
 
     return d*sumf_d - dmin*sumf_m;
 
+#else
+
+    // iqs is 0...3
+
+    const int8_t * s = bq5_K->scales;
+
+    const float d = bq5_K->d;
+
+    const float d8_1 = bq8_1[0].d;
+    const float d8_2 = bq8_1[1].d;
+
+    const int ui1 = *((const int *)bq8_1[0].qs + iqs);
+    const int ui2 = *((const int *)bq8_1[0].qs + iqs + 4);
+    const int ui3 = *((const int *)bq8_1[1].qs + iqs);
+    const int ui4 = *((const int *)bq8_1[1].qs + iqs + 4);
+
+    const int * ql = (const int *)bq5_K->qs + iqs;
+    const int vl1 = ql[0];
+    const int vl2 = ql[4];
+
+    const int step = 4 * iqs; // 0, 4, 8, 12
+    const int im = step/8; // = 0 for iqs = 0, 1, = 1 for iqs = 2, 3
+    const int in = step%8; // 0, 4, 0, 4
+    // we add 16 -> im = 2 for iqs = 0, 1, and im = 3 for iqs = 2, 3
+    //           -> in = 0, 4, 0, 4
+    const int vh = (*((const int *)(bq5_K->qh + in))) >> im;
+    const int v1 = __vsub4((((vh >> 0) << 4) & 0x10101010) | ((vl1 >> 0) & 0x0f0f0f0f), 0x10101010);
+    const int v2 = __vsub4((((vh >> 2) << 4) & 0x10101010) | ((vl2 >> 0) & 0x0f0f0f0f), 0x10101010);
+    const int v3 = __vsub4((((vh >> 4) << 4) & 0x10101010) | ((vl1 >> 4) & 0x0f0f0f0f), 0x10101010);
+    const int v4 = __vsub4((((vh >> 6) << 4) & 0x10101010) | ((vl1 >> 4) & 0x0f0f0f0f), 0x10101010);
+
+    sumf_d = d8_1 * (__dp4a(ui1, v1, 0) * s[0] + __dp4a(ui2, v2, 0) * s[1])
+           + d8_2 * (__dp4a(ui3, v3, 0) * s[2] + __dp4a(ui4, v4, 0) * s[3]);
+    //const int dot1 = __dp4a(ui2, v2, __dp4a(ui1, v1, 0));
+    //const int dot2 = __dp4a(ui4, v4, __dp4a(ui3, v3, 0));
+    //sumf_d += d8_1 * (dot1 * s[0]) + d8_2 * (dot2 * s[1]);
+
+    return d * sumf_d;
+
 #endif
+
 #else
     return 0.0f; // only to satisfy the compiler
 #endif // __CUDA_ARCH__ >= MIN_CC_DP4A
